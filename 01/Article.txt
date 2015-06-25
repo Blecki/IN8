@@ -1,0 +1,241 @@
+[SIZE=7]Something Outrageous[/SIZE]
+
+Lets do something totally outrageous. How outrageous? More outrageous than designing our own processor from scratch, emulating it, and bootstrapping a B compiler onto it. No. Wait. It's exactly that outrageous because that is what we are going to do. (One thing we won't do is any kind of research.) So a bit ago a virtual CPU became incredibly popular for a very brief amount of time because someone announced a game that turned out to be vaporware (And then the whole company was bought, along with their far more popular game that everyone loves but is kind of terrible in other ways). More recently there is Zachtronic's TIS-100 (http://www.zachtronics.com/tis-100/) a game about writing assembly. I have no idea how TIS-100 works under the hood. Is it actually assembling the assembly and running it on a virtual machine? Is it being interpretted? Either way, the two examples have something in common. The processor was designed to be educational, not actually.. feasible. I'm going to follow their lead and not worry about it actually being possible to build this in silicon.
+
+It is going to be an 8-bit CPU and I am going to call it the IN8 because when you say that it sounds like 'inate'. And also because it has '8' in the name and it's an 8-bit CPU. Why 8-bit? Because 16-bit is boring. With 16 bits, I can directly address enough memory to do interesting things, but the memory footprint is small enough that I can still emulate the CPU with nothing but a big array. I want something a bit more challenging. Also 'IN8' sounds much nicer than 'IN16'. 
+
+If it's 8-bit, I should use 8 bits to encode an instruction. I could use 16, and get far more instruction space, but I don't see any reason why I should do that. Lets have 8 registers. So I need 3 bits to encode each operand, which gives me 2 bits left over, which means I can have 4 operations.. oh. Maybe I should use two bytes per instruction? No, that's crazy talk. I'm going to use 8.
+
+This is a Von Neumann type processor with some registers. I need to be able to encode more than 4 operations, so I'm going to use accumulator registers. I can get away with 2, and use a single bit to specify which one. 
+
+[CODE]
+REGISTER TABLE / OPERAND ENCODING TABLE
+ENCODING - NAME - PURPOSE
+000      - A    - Accumulator
+001      - B    - Accumulator
+010      - C    - Scratch
+011      - D    - Scratch
+100      - E    - Scratch
+101      - H    - High byte of memory pointer
+110      - L    - Low byte of memory pointer
+111      - N    - Next byte in instruction stream
+         - IP   - Special 16-bit instruction pointer
+         - SP   - Special 16-bit stack pointer
+         - O    - Read-only overflow register
+         - DE   - A virtual register formed by interpretting D and E as a single 16-bit value.
+         - HL   - A virtual register formed by interpretting H and L as a single 16-bit value.
+[/CODE]
+
+By using HL for memory addressing, I'll be able to address up to 64kb of memory. I don't expect to actually use that much when I go about emulating this. That sounds like far too much to be interesting. 
+
+I'll encode each instruction in just 8 bits. This gives me exactly 256 unique instructions, which will mean I can emulate by just writing a big switch statement. There won't be any need to actually decode operands. I could just randomly assign values, but instead I'll be at least somewhat organized. There are three types of instructions. Some take 2 arguments, some take 1, some take none.
+
+Paired operand instructions are the set that take 2 operands. Their first operand is always either A or B. That is why I called these accumulator registers. I will be using them a lot. The second operand is any of A, B, C, D, E, H, L or N. Each one of these instructions knocks out 16 instructions from my instruction space, so they must be used sparingly.
+
+[CODE]
+    [0000] [0] [000]
+      |     |    L--- Second operand - See operand encoding table
+      |     L--- First operand - 0 = A; 1 = B
+      L--- Instruction code
+[/CODE]
+
+Single operand instructions are the set that takes only 1 operand. They can refer to all 8 encodable registers.
+
+[CODE]
+    [00000] [000]
+      |       L--- Operand - See operand encoding table
+      L--- Instruction code
+[/CODE]
+
+Finally, there are the instructions that take no operands. 
+
+[CODE]
+	[00000000]
+	  L--- Yeah, they are just a byte. I think you could have guessed that already.
+[/CODE]
+
+But.. I'm not going to be decoding instructions. This patterns is handy, but ultimately, arbitrary.
+
+
+[SIZE=7]COPYING VALUES[/SIZE]
+
+I'm just going to dive right in and start defining some instructions. What does the processor need to be able to do? Well, it needs to be able to move things around in memory. It needs a 'MOV' instruction. I can't actually write one, though, because I just said that all two operand instructions must have A or B as their first operand. I can't MOV D E, for example. I'll need two instructions: MTA (move to a) and MFA (move from a). A could be B, too.
+
+[CODE]
+Cycles   Binary              Mnemonic    Purpose
+1       0000 [0] [000]      MTA 1 2     Copy 2 to 1. 
+1       0001 [0] [000]      MFA 1 2     Copy 1 to 2, unless 2 is N.
+[/CODE]
+
+This is what my instruction table is going to look like. The first column is the number of cycles this instruction should take, if I somehow managed to implement this in reality. This is so I can make division more expensive. The second column is the binary representation of this instruction. The values in brackets mean that all values of that range are possible. For example, [0] could be 0 or 1. [000] could be 000, 001, or 111. Or anything in between. (That's only 8 possible values)
+Next we have the Mnemonic I will implement when I write an assembler. And finally, what the instruction actually does. For MFA, why can't I use N? Because I can't write to 'next byte in the instruction stream'. MFA 1 N is an illegal instruction.
+
+Just moving things around cost me 32 instructions. Or.. no, it didn't. MTA A A and MTA B B are pointless. So are MFA A A and MFA B B. They don't do anything. MFA A B is the same as MTA B A. MFA B A.. MTA A B. MFA A N and MFA B N are illegal. So I've used 24 instructions. I have 8 redundant or illegal instructions whose binary representation I can recycle for other things. This is going to become a pattern. I have only 256 possible instructions, I can't afford to waste any instruction space.
+
+
+[SIZE=7]MATH[/SIZE]
+
+I need basic math operations.
+
+[CODE]
+Cycles   Binary              Mnemonic    Purpose
+2       0010 [0] [000]      ADD 1 2     Add 1 to 2.
+2       0011 [0] [000]      SUB 1 2     Subtract 2 from 1.
+8       0100 [0] [000]      MUL 1 2     Multiply 1 by 2.
+32      0101 [0] [000]      DIV 1 2     Divide 1 by 2.
+32      0110 [0] [000]      MOD 1 2     Divide 1 by 2 and store the remainder in 1.
+2       0111 [0] [000]      AND 1 2     Perform a binary and between 1 and 2.
+2       1000 [0] [000]      BOR 1 2     Perform a binary or between 1 and 2.
+2       1001 [0] [000]      XOR 1 2     Perform a binary xor between 1 and 2.
+[/CODE]
+
+Most of these set the O (overflow) register. In fact I should assume any math operation does. In all cases, the result is stored in the first operand. I get a few freebies from this set too. For example, the result of AND A A is always A. In total I can recycle 4 pointless instructions. I'm already almost out of instruction space. Thankfully, there isn't really that much left to add.
+
+I'm going to tuck a few random operations into the empty space available so far.
+
+[CODE]
+Cycles   Binary              Mnemonic    Purpose
+2      -0001 [0] [111]      NOT 1       Perform a binary not operation on 1. These replace MFA 1 N.
+1      -0111 [0] [000]      OVA         Store O in A. Replaces AND A A (Result is always A)
+1      -0111 [1] [001]      OVB         Store O in B. Replaces AND B B (Result is always B)
+8      -1000 [0] [000]      MUS         Multiply A by B, store the result in B; treat both as signed. Replaces BOR A A
+32     -1000 [1] [001]      DIS         Divide A by B, store the result in B; treat both as signed. Replaces BOR B B
+[/CODE]
+
+
+[SIZE=7]THE STACK[/SIZE]
+
+Now it starts to get a bit tricky. SP is the stack pointer. I can't manipulate it with the math instructions because it's not an encodable operand. So I'll add some instructions for dealing with it. I could leave this out entirely, and use this instruction space
+for something else. I don't even need to implement SP, but at some point I'm going to be compiling a derivative of BCPL to this
+instruction set. Then, having a hardware stack will be very helpful.
+
+[CODE]
+Cycles   Binary              Mnemonic    Purpose
+4       10100 [000]         PSH 1       Push 1 to the stack, decrement SP.
+4       10101 [000]         POP 1       Copy the top value on the stack to 1, increment SP, unless 1 is N.
+2       10110 [000]         PEK 1       Copy the value on the top of the stack to 1, unless 1 is N.
+[/CODE]
+
+By decrementing when I push, and incrementing when I pop, the stack grows downward.
+
+Since POP and PEK can't write to N, I can recycle those encodings.
+
+[CODE]
+2      -10101 [111]         RSP         Load the value of SP into HL.
+2      -10110 [111]         SSP         Set the value of SP from HL.
+[/CODE]
+
+And because I need to be able to pop lots of things off the stack at once..
+
+[CODE]
+4       11101 [000]         ADS 1       Add 1 to SP
+4       11110 [000]         SBS 1       Subtract 1 from SP
+[/CODE]
+
+
+[SIZE=7]MEMORY[/SIZE]
+
+Speaking of HL, I also need to be able to actually access memory. The IN8 supports up to 64K of memory, and it is byte addressable. As this is an 8-bit machine, working with only 8-bit values, we need more than a single byte to address memory. One byte can address only 256 bytes of memory. Memory is broken into 256-byte pages. H represents the page, and L is the offset into the page.
+
+[CODE]
+Cycles   Binary              Mnemonic    Purpose
+8      10111 [000]         LOD 1       Interpret HL as a 16-bit memory address and load the value from that address into 1, unless 1 is N.
+8      11000 [000]         STR 1       Interpret HL as a 16-bit memory address and store the value of 1 into that address.
+[/CODE]
+
+LOD and STR (Load and Store) are almost the only way to interact with memory. 
+Since LOD can't write to N, I'll use it for loading two-byte literals from the instruction stream.
+
+[CODE]
+2      -10111 [111]         LLT         Read the next two words in the instruction stream into HL.
+[/CODE]
+
+Reading two bytes from memory at once would also be nice. Unlike LOD and STR, LDW and SDW can read and write only A and B.
+
+[CODE]
+Cycles   Binary              Mnemonic    Purpose
+12     -11001 [000]         LDW         Load a double word. Interpret HL as a 16-bit memory address and load two values at that
+										 address into A and B. The address must be aligned to 2 bytes. That is, L must be an even number. 
+12     -11001 [001]         SDW         Store a double word. Interpret HL as a 16-bit memory address and write the values of A and B 
+										 to that address. The address must be aligned to 2 bytes. That is, L must be an even number.
+[/CODE]
+
+This is the first time I've brought up alignment. Why is it suddenly important? Because by using HL for a memory pointer, I've setup a paged memory scheme. Suddenly it becomes vital that the emulator doesn't read or write across a page boundary. And also because it's going to make things more fun. I need a couple little gotchas like that just to keep this realistic.
+
+There are a couple more things I can do with HL. Since I only get one memory pointer, and I have to use it for all memory access, including accessing the stack, I can go ahead and add a few instruction to help me out. I have another set of registers, D and E, that I can use as scratch space for HL.
+
+[CODE]
+Cycles   Binary              Mnemonic    Purpose
+2      -11001 [011]         CFP         Copy Frame Pointer. Copy the value of DE into HL. Ease implementation of frame pointers. 
+2      -11001 [100]         SWP         Swap the value of D with H and E with L. Ease manipulation of two memory pointers.
+2      -11001 [101]         RIP         Load the value of IP into HL.
+[/CODE]
+
+These last two are my favorite memory functions in the bunch. They also allow HL to be used as a 16-bit counter!
+
+[CODE]
+4       11011 [000]         CAD 1       Add 1 to L, carrying overflow into H
+4       11100 [000]         CSB 1       Subtract 1 from L, pulling overflow from H
+[/CODE]
+
+
+[SIZE=7]BRANCHING AND JUMPS[/SIZE]
+
+Now I come to logic. The CPU needs to be able to make decisions, and move execution around in the instruction stream. I have some basic jumps first. None of these are conditional. 
+
+[CODE]
+Cycles   Binary              Mnemonic    Purpose
+1      -11001 [010]         STP         Stop execution immediately.
+2      -11001 [110]         JMP         Interpret HL as a 16-bit memory address and jump to it. This is the same as setting IP to HL.
+2      -11001 [111]         JPL         Interpret the next two words in the code stream as an address and jump to it. This also modifies HL.
+4      -0000 [0] [000]      CAL         Interpret HL as an address, push IP to the stack, jump to HL.       Replaces MTA A A
+4      -0000 [1] [001]      RET         Pop two words from the stack to HL, jump to HL.                     Replaces MTA B B
+2      -11111 [110]         SFJ         Short forward jump. Read the next word and add it to IP
+2      -11111 [111]         SBJ         Short backward jump. Read the next word and subtract it from IP
+[/CODE]
+
+Conditional jumps are slightly more complicated. Each comparison works only between A and B, so the values to be compared must be loaded there. They jump only to HL, so the destination address must be placed there. They don't skip the next instruction, they always jump if true, so there's no need to implement carry flags to make it skip over proceeding jumps. They are, if anything, too heavyweight. It will take three instructions just to setup the comparison.
+
+[CODE]
+Cycles   Binary              Mnemonic    Purpose
+8      -11010 [000]         BIE         A equals B
+8      -11010 [001]         BNE         A does not equal B
+8      -11010 [010]         BGT         A is greater than B
+8      -11010 [011]         BLT         A is less than B
+8      -11010 [100]         BEG         A is equal to or greater than B
+8      -11010 [101]         BEL         A is equal to or less than B
+8      -11010 [110]         BSL         A is less than B, treated as signed bytes
+8      -11010 [111]         BSG         A is greater than B, treated as signed bytes
+16     -11111 [011]         JIG         If HL >= DE, interpret the next two words in the code stream as an address and jump to it. This also modifies HL.
+[/CODE]
+
+That last one is just something wacky with no practical purpose...
+
+
+[SIZE=7]HARDWARE[/SIZE]
+
+The IN8 supports 256 8-bit IO ports. Devices are attached to these ports. It also supports memory mapping, though there are restrictions on how many devices can use mapped memory at once. It turns out that manipulating the ports takes exactly two instructions.
+
+[CODE]
+Cycles   Binary              Mnemonic    Purpose
+2      -11111 [000]         OUT         Write to an IO port. A contains the port number, B contains the byte to write
+2      -11111 [001]         IIN         Read from an IO port. A contains the port number, data is placed in B
+[/CODE]
+
+Actual hardware configurations are a subject for a different article.
+
+
+[SIZE=7]THE CLOCK[/SIZE]
+
+The IN8 has a 32 bit cycle counting clock. It's just counting cycles, so it overflows rather fast. It will also always be a bit behind, because by time you read it and do something with the value, more cycles have passed.
+
+[CODE]
+Cycles   Binary              Mnemonic    Purpose
+4      -11111 [101]         CLK         Load the current clock value into DEHL
+[/CODE]
+
+
+[SIZE=7]LEFTOVERS[/SIZE]
+
+That's it, the instruction set is done. And with 6 instructions left over. I wonder what I can use them for? Next time, I'm going to write the emulator. 
+
