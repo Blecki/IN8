@@ -239,3 +239,4 @@ Cycles   Binary              Mnemonic    Purpose
 
 That's it, the instruction set is done. And with 6 instructions left over. I wonder what I can use them for? Next time, I'm going to write the emulator. 
 
+You can find the complete IN8 specification at https://raw.githubusercontent.com/Blecki/IN8/master/01/in8-spec.txt
