@@ -15,8 +15,8 @@ namespace IN8
             /*
              * Input to support
              * [*]  Run hex coded ML 
-             * [ ]  Load binary file to memory and run
-             * [ ]  Set memory size
+             * [*]  Load binary file to memory and run
+             * [*]  Set memory size
              * [ ]  Binding hardware
              * [*]  Single step debugging mode
              * [*]  Break points
@@ -52,6 +52,17 @@ namespace IN8
                         stepping = true;
                         argI += 1;
                     }
+                    else if (args[argI] == "-F")
+                    {
+                        var file = System.IO.File.ReadAllBytes(args[argI + 1]);
+                        file.CopyTo(Emulator.MEM, 0);
+                        argI += 2;
+                    }
+                    else if (args[argI] == "-M")
+                    {
+                        Emulator.MEMORY_SIZE = Convert.ToUInt16(args[argI + 1], 16);
+                        argI += 2;
+                    }
                 }
 
                 while (Emulator.STATE_FLAGS == 0)
@@ -68,6 +79,7 @@ namespace IN8
                 }
                  
                 Dump("STOP");
+                Console.Write("PRESS ANY KEY TO EXIT");
                 Console.ReadKey();
             }
             catch (Exception e)
@@ -85,7 +97,7 @@ namespace IN8
                 Console.SetCursorPosition(0, 0);
                 Console.Write(new String(' ', 128));
                 Console.SetCursorPosition(0, 0);
-                Console.Write("IN8 EMULATOR : {0}", Message);
+                Console.Write("IN8 EMULATOR : {0}  CLOCK: {1}", Message, Emulator.CLOCK);
 
                 Console.ForegroundColor = ConsoleColor.Blue;
                 DrawBox(109, 0, 119, 12);
