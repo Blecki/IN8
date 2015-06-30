@@ -86,7 +86,7 @@ namespace IN8
                     case 0x0D: /* MTA B H */ { CLOCK += 1; B = H; break; }
                     case 0x0E: /* MTA B L */ { CLOCK += 1; B = L; break; }
                     case 0x0F: /* MTA B N */ { CLOCK += 1; var X = N; B = X; break; }
-                    case 0x10: /* NPA     */ { CLOCK += 1; break; }
+                    case 0x10: /* SSL     */ { CLOCK += 1; A <<= B; break; }
                     case 0x11: /* NPB     */ { CLOCK += 1; break; }
                     case 0x12: /* MFA A C */ { CLOCK += 1; C = A; break; }
                     case 0x13: /* MFA A D */ { CLOCK += 1; D = A; break; }
@@ -95,7 +95,7 @@ namespace IN8
                     case 0x16: /* MFA A L */ { CLOCK += 1; L = A; break; }
                     case 0x17: /* NOT A   */ { CLOCK += 2; A = (byte)~A; break; }
                     case 0x18: /* NPC     */ { CLOCK += 1; break; }
-                    case 0x19: /* NPD     */ { CLOCK += 1; break; }
+                    case 0x19: /* SSR     */ { CLOCK += 1; A >>= B; break; }
                     case 0x1A: /* MFA B C */ { CLOCK += 1; C = B; break; }
                     case 0x1B: /* MFA B D */ { CLOCK += 1; D = B; break; }
                     case 0x1C: /* MFA B E */ { CLOCK += 1; E = B; break; }

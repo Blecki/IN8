@@ -94,8 +94,8 @@ Instruction table
             * Some instructions become non-operations and their encoding can be reused for other instructions.
     4      -0000 [0] [000]      CAL         Interpret HL as an address, push IP to the stack, jump to HL.       Replaces MTA A A
     4      -0000 [1] [001]      RET         Pop two words from the stack to HL, jump to HL.                     Replaces MTA B B
-           -0001 [0] [000]                                                                                      Replaces MFA A A
-           -0001 [1] [001]                                                                                      Replaces MFA B B
+           -0001 [0] [000]      SSL         Shift A Left by B bits                                              Replaces MFA A A
+           -0001 [1] [001]      SSR         Shift A Right by B bits                                             Replaces MFA B B
            -0001 [0] [001]                                                                                      Replaces MFA A B - Same as MTA B A
            -0001 [1] [000]                                                                                      Replaces MFA B A - Same as MTA A B
 

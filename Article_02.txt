@@ -1,0 +1,105 @@
+Last time, I designed the instruction set for the IN8 CPU. This time, I'm going to emulate it. This thing is so incredibly easy to animate that this is going to be very short. I'm writing this in C#, but that is mostly irrelevant. Basic stuff first: I need to store the registers, and the contents of ram.
+
+[code]
+public byte[] MEM = new byte[0x10000];
+public byte A, B, C, D, E, H, L = 0;
+public ushort IP, SP = 0;
+public byte O = 0;
+public uint CLOCK = 0;
+[/code]
+
+And there is a step function, which reads the next instruction and executes it. Now since there are only 256 possible instructions, all I need is a big switch statement...
+
+[code]
+switch (N)
+{
+    case 0x00: /* CAL     */
+    {
+        CLOCK += 4; 
+        CHECK_MEM(SP - 1); CHECK_MEM(SP - 2);
+        MEM[(ushort)(--SP)] = (byte)IP; MEM[(ushort)(--SP)] = (byte)(IP >> 8); IP = HL;
+        break;
+    }
+    case 0x01: /* MTA A B */ { CLOCK += 1; A = B; break; }
+    case 0x02: /* MTA A C */ { CLOCK += 1; A = C; break; }
+    case 0x03: /* MTA A D */ { CLOCK += 1; A = D; break; }
+    case 0x04: /* MTA A E */ { CLOCK += 1; A = E; break; }
+    case 0x05: /* MTA A H */ { CLOCK += 1; A = H; break; }
+    case 0x06: /* MTA A L */ { CLOCK += 1; A = L; break; }
+    case 0x07: /* MTA A N */ { CLOCK += 1; var X = N; A = X; break; }
+    case 0x08: /* MTA B A */ { CLOCK += 1; B = A; break; }
+    ...
+[/code]
+
+Yeah I'm not going to copy and paste the whole thing. You already get the idea. 
+
+I wrote a host program so I can start messing around with this thing. I'm using Monogame to implement some of the hardware, like a display. Details of how hardware is implemented is beyond the scope of this, as I'm more interested in the design of the hardware I'm emulating. The host is pretty fantastic. I can use it to step through code running on the emulator, and it can be configured by the command line to add hardware to the virtual desktop. It will also let me specify, in machine language, some code to run on the emulator. Eventually I'd like to emulate a disc drive, and will probably be giving the emulator some kind of ROM with a bootloader in it. For now, though, it's easy to test bits of code.
+
+To test out hardware, I'll start with something simple. Say, a seven segment display. You know what this is, even if you've never heard it called that. It has seven parts that can be lit up, and by illuminating specific pieces it can display numbers.
+
+Hardware communicates with the IN8 by binding ports. So we'll create a seven segment display that binds to one port, and displays whatever is written to that port. The display can show one number, and the data sent to it is a bitfield indicating if each segment is illuminated or not.
+
+When I run the emulator, I get two windows. One is blank, and contains a visual representation of the hardware I bound. The other is a console window and contains information about the cpu.
+
+[image 01]
+
+I'm not sure what number that seven-segment is meant to display. The command line to run that simple program looks like this 
+[code]"X 07 05 0F 03 F8 CA" "H7SGM 16 16 05"[/code]
+
+Writing programs at this stage is very, very difficult. Programs have to be prepared in machine language. I want to display something on a series of seven-segment displays, so I'll go ahead and get an array of them ready. First I'm going to display each segment by itself.
+
+[code]
+Byte Number 	Assembly			Machine Language
+
+;Loop from 0 to 7 inclusive
+
+;A is our counter and port number for writing.
+00 				MTA A N 			07
+01					0x00			00
+
+:BEGIN
+
+02 				LLT 				BF
+03 					&END 			00
+04									14
+05 				MTA B N 			0F
+06 					0x08			08
+07 				BEG 				D4
+
+;Output to display A
+08 				MFA A C 			12
+09 				MTA B A 			08
+0A 				MTA A N 			07
+0B 					0x01 			01
+0C 				SSL 				10
+0D 				MTA B A 			08
+0E 				MTA A C 			02
+0F 				OUT 				F8
+
+;Increment A
+10 				ADD A N 			27
+11 					0x01 			01
+
+12 				JPL 				CF
+13 					&BEGIN 			00
+14									02
+
+:END
+
+15 				STP 				CA
+
+[/code]
+
+The machine language: 07 00 BF 00 14 0F 08 D4 12 08 07 01 10 08 02 F8 27 01 CF 00 02 CA
+
+[image 02]
+
+I invented two new instructions: SSL and SSR, which do bit-wise shifts. Writing code this way is down right painful. But I'm going to have to write a functioning assembler this way before I can do anything about it. This is going to be fantastic. Next time, I'll emulate disc hardware, so that the assembler has a place to read code from and write machine language to. Fun!
+
+The code so far is on github (Yay!) at https://github.com/Blecki/IN8
+
+Two little asides: First, here is a program that does something
+
+[code]07 00 0F 7F F8 07 01 0F 3F F8 07 02 0F 3F F8 07 03 0F 7F F8 07 04 0F 06 F8 07 05 0F 79 F8 07 06 0F 6D F8 CA[/code] Hehe. Hehehe.
+
+Second, I am displeased with my instruction set. It is quite likely that I will remove some instructions to add others. Instructions like adding the value at the top of the stack to A, which seems more useful than adding H to A. I shall see.
